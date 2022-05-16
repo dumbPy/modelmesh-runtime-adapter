@@ -19,4 +19,5 @@ const (
 	tritonModelSubdir              string = "_triton_models"
 	tritonRepositoryConfigFilename string = "config.pbtxt"
 	tensorflowSavedModelDirName    string = "model.savedmodel"
+	tritonPreLoadHook              string = "preload-hook.sh"
 )
