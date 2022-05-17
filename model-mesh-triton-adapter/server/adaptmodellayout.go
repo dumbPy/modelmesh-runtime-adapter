@@ -14,11 +14,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -114,16 +116,24 @@ func adaptModelLayoutForRuntime(ctx context.Context, rootModelDir, modelID, mode
 	if err != nil {
 		return fmt.Errorf("Error processing model/schema files for model %s: %w", modelID, err)
 	}
-	if hook = getPreloadHook(tritonModelIDDir){
-		if hook != nil {
-			cmd := exec.Command("sh", "-c", "cd " + tritonModelIDDir + " && sh " + hook.Name())
-			output, err2 = cmd.Output()
-			if err2 != nil {
-				return fmt.Errorf("Failed to run preload hook %s for modelID %s: %w", hook.Name(), modelID, err)
-			}
-		}
+	hook, err2 := getPreloadHook(tritonModelIDDir)
+	if err2 != nil {
+		log.Error(err, "Failed reading files when searching for hook in tritonModelIDDir ", tritonModelIDDir)
 	}
-
+	if hook != nil {
+		cmd := exec.Command("bash", hook.Name())
+		cmd.Dir = tritonModelIDDir
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &stderr
+		err3 := cmd.Run()
+		if err3 != nil {
+			return fmt.Errorf("Failed to run preload hook %s for modelID %s: %w: %s", hook.Name(), modelID, err3, stderr.String())
+		}
+	} else {
+		log.Info("No hook found in: %s", tritonModelIDDir)
+	}
 	return nil
 }
 
@@ -327,14 +337,18 @@ func isTritonModelRepository(files []os.FileInfo) bool {
 }
 
 // List the files in tritonModelIDDir and return preload-hook if any else return nil
-func getPreloadHook(tritonModelIDDir) os.FileInfo {
+func getPreloadHook(tritonModelIDDir string) (os.FileInfo, error) {
 	files, err := ioutil.ReadDir(tritonModelIDDir)
+	if err != nil {
+		return nil, err
+	}
 	for _, f := range files {
-		if f.Name() == tritonPreLoadHook {
-			return f
+		// if f.Name() == tritonPreLoadHook {
+		if f.Name() == "preload-hook.sh" {
+			return f, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // processModelConfig removes the `name` field from a config.pbtxt file and updates schema if required
